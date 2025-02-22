@@ -1,36 +1,58 @@
-# This is a basic workflow to help you get started with Actions
+name: Build Aseprite
 
-name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "master" branch
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches:
+      - master
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Install dependencies
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          sudo apt update
+          sudo apt install g++ clang libc++-dev libc++abi-dev cmake ninja-build libx11-dev libxcursor-dev libxi-dev libgl1-mesa-dev libfontconfig1-dev curl unzip -y
+
+      - name: Download Aseprite source
+        run: |
+          mkdir -p ~/src/aseprite/build ~/src/deps/skia
+          cd ~/src/aseprite
+          curl --proto '=https' --tlsv1.3 -LsSf https://github.com/aseprite/aseprite/releases/download/v1.3.13-beta1/Aseprite-v1.3.13-beta1-Source.zip -o Aseprite-v1.3.13-beta1-Source.zip
+          unzip Aseprite-v1.3.13-beta1-Source.zip
+
+      - name: Download and extract Skia
+        run: |
+          cd ~/src/deps/skia
+          curl -LO https://github.com/aseprite/skia/releases/download/m102-861e4743af/Skia-Linux-Release-x64-libc++.zip
+          unzip Skia-Linux-Release-x64-libc++.zip
+
+      - name: Build Aseprite
+        run: |
+          cd ~/src/aseprite/build
+          export CC=clang
+          export CXX=clang++
+          cmake \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS:STRING=--stdlib=libc++ \
+            -DCMAKE_EXE_LINKER_FLAGS:STRING=--stdlib=libc++ \
+            -DLAF_BACKEND=skia \
+            -DSKIA_DIR=$HOME/src/deps/skia \
+            -DSKIA_LIBRARY_DIR=$HOME/src/deps/skia/out/Release-x64 \
+            -DSKIA_LIBRARY=$HOME/src/deps/skia/out/Release-x64/libskia.a \
+            -G Ninja ..
+          ninja aseprite
+
+      - name: Move binary
+        run: |
+          mkdir -p ~/opt
+          mv -T ~/src/aseprite/build/bin ~/opt/aseprite
+
+      - name: Upload Aseprite binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: aseprite
+          path: ~/opt/aseprite
